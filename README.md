@@ -15,23 +15,25 @@
 - 上手容易但要动脑：多次点击的顺序很关键，先点的箭头会为后面的箭头让路。
 - 共 6 个关卡（3×3 到 6×6，合计 54 个箭头），每一关都经求解器验证存在完整通关顺序。
 - 每关有失误次数上限、实时计时、可以撤销上一步、随时重新开始。
+- 主菜单既可以直接开始游戏，也可以进入「选择关卡」界面挑任意一关开玩（鼠标点行或按数字键 1–6）。
 
 ## 游戏截图
 
-| 开始界面 | 游戏界面 |
+| 开始界面 | 选择关卡 |
 | --- | --- |
-| ![开始界面](docs/screenshots/01-start.png) | ![游戏界面](docs/screenshots/02-gameplay.png) |
+| ![开始界面](docs/screenshots/01-start.png) | ![选择关卡](docs/screenshots/01b-level-select.png) |
 
-| 碰撞反馈（前方被挡住） | 过关结算 |
+| 游戏界面 | 碰撞反馈（前方被挡住） |
 | --- | --- |
-| ![碰撞反馈](docs/screenshots/03-blocked.png) | ![过关](docs/screenshots/05-level-clear.png) |
+| ![游戏界面](docs/screenshots/02-gameplay.png) | ![碰撞反馈](docs/screenshots/03-blocked.png) |
 
-| 第 3 关游戏过程 | 失败界面 |
+| 第 3 关游戏过程 | 过关结算 |
 | --- | --- |
-| ![第 3 关](docs/screenshots/04-level3.png) | ![失败](docs/screenshots/06-failed.png) |
+| ![第 3 关](docs/screenshots/04-level3.png) | ![过关](docs/screenshots/05-level-clear.png) |
 
-![全部通关](docs/screenshots/07-all-clear.png)
-
+| 失败界面 | 全部通关 |
+| --- | --- |
+| ![失败](docs/screenshots/06-failed.png) | ![全部通关](docs/screenshots/07-all-clear.png) |
 ## 开发环境
 
 | 项目 | 版本 |
@@ -64,6 +66,7 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 | 鼠标左键点击箭头 | 尝试让该箭头飞出棋盘 |
 | `R` | 重新开始本关（箭头布局与失误次数都会还原） |
 | `U` | 撤销上一步成功消除（不消耗失误） |
+| `L` | 在主菜单与选择关卡界面之间切换；选关界面里按 `1`–`6` 直接进对应关卡 |
 | `Enter` / `Space` | 开始游戏、进入下一关、再玩一次 |
 | `Esc` | 退出游戏 |
 
@@ -153,8 +156,9 @@ def is_free(self, row, col) -> bool:
 python -m unittest discover -s tests -t . -v
 ```
 
-共 58 个用例，覆盖路径检测（四种方向、边界、负索引回归）、关卡数据合法性、
-每个关卡可通关、失误与撤销、计时、以及界面层的事件与渲染冒烟测试。
+共 70 个用例，覆盖路径检测（四种方向、边界、负索引回归）、关卡数据合法性、
+每个关卡可通关、失误与撤销、计时、选关流程，以及界面层的事件接线与渲染冒烟测试
+（包含「退出并重新初始化 pygame 后仍能正常绘制」的回归用例）。
 详细的测试记录见 [docs/test-record.md](docs/test-record.md)。
 
 ## 生成截图
