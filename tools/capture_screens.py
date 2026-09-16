@@ -66,7 +66,15 @@ def main() -> int:
     # 1. 开始界面
     shoot("01-start.png")
 
-    # 2. 游戏界面：第 1 关，鼠标悬停在可以飞出的箭头上
+    # 2. 选关界面：鼠标悬停在第 4 关那一行
+    session.open_level_select()
+    game.screens.update(0.0)
+    start_screen = game.screens.start_screen
+    start_screen.pointer = start_screen.level_row_rect(3).center
+    shoot("01b-level-select.png")
+    session.back_to_menu()
+
+    # 3. 游戏界面：第 1 关，鼠标悬停在可以飞出的箭头上
     session.start_game()
     game.screens.update(0.0)
     free_cell = first_free(session)
@@ -74,12 +82,12 @@ def main() -> int:
     screen.pointer = layout.cell_rect(board_rect, *free_cell).center
     shoot("02-gameplay.png")
 
-    # 3. 碰撞反馈：点击一个被挡住的箭头
+    # 4. 碰撞反馈：点击一个被挡住的箭头
     blocked_cell = first_blocked(session)
     screen.click_cell(*blocked_cell)
     shoot("03-blocked.png")
 
-    # 4. 第 3 关进行中
+    # 5. 第 3 关进行中
     session.restart_level()
     screen.animations.clear()
     clear_current_level(session)
@@ -95,12 +103,12 @@ def main() -> int:
     ).center
     shoot("04-level3.png")
 
-    # 5. 过关面板
+    # 6. 过关面板
     clear_current_level(session)
     screen.animations.clear()
     shoot("05-level-clear.png")
 
-    # 6. 失败面板
+    # 7. 失败面板
     screen.manager.restart_level()
     session.mistakes_left = 1
     blocked_cell = first_blocked(session)
@@ -108,7 +116,7 @@ def main() -> int:
     screen.animations.clear()
     shoot("06-failed.png")
 
-    # 7. 全部通关
+    # 8. 全部通关
     session.restart_level()
     screen.animations.clear()
     while session.phase is not Phase.ALL_CLEAR:

@@ -161,6 +161,65 @@ class LevelFlowTest(unittest.TestCase):
             Session([])
 
 
+class LevelSelectTest(unittest.TestCase):
+    """选关功能：从主菜单挑一关直接开始。"""
+
+    def test_open_level_select_from_start(self) -> None:
+        session = Session()
+        session.open_level_select()
+        self.assertIs(session.phase, Phase.LEVEL_SELECT)
+        self.assertIs(session.click_cell(0, 0), ClickResult.IGNORED)
+
+    def test_open_level_select_is_ignored_while_playing(self) -> None:
+        session = Session()
+        session.start_game()
+        session.open_level_select()
+        self.assertIs(session.phase, Phase.PLAYING)
+
+    def test_start_at_level_jumps_to_that_level(self) -> None:
+        session = Session()
+        session.start_at_level(3)
+        self.assertIs(session.phase, Phase.PLAYING)
+        self.assertEqual(session.level_number, 4)
+        self.assertEqual(session.board.to_grid(), list(session.levels[3].grid))
+        self.assertEqual(session.mistakes_left, session.levels[3].mistakes)
+
+    def test_start_at_level_resets_progress(self) -> None:
+        session = Session([TINY, TINY, TINY])
+        session.start_game()
+        session.click_cell(0, 0)  # 通关第 1 关
+        session.tick(5.0)
+        self.assertEqual(session.cleared_levels, 1)
+        session.start_at_level(2)
+        self.assertEqual(session.cleared_levels, 0)
+        self.assertEqual(session.total_time, 0.0)
+        self.assertEqual(session.total_clicks, 0)
+        self.assertEqual(session.level_number, 3)
+        self.assertEqual(session.level_time, 0.0)
+
+    def test_start_game_is_level_one(self) -> None:
+        session = Session()
+        session.start_at_level(0)
+        self.assertEqual(session.level_number, 1)
+        session.back_to_menu()
+        session.start_game()
+        self.assertEqual(session.level_number, 1)
+
+    def test_start_at_level_rejects_out_of_range(self) -> None:
+        session = Session()
+        with self.assertRaises(IndexError):
+            session.start_at_level(session.level_count)
+        with self.assertRaises(IndexError):
+            session.start_at_level(-1)
+
+    def test_back_to_menu_from_level_select(self) -> None:
+        session = Session()
+        session.open_level_select()
+        session.back_to_menu()
+        self.assertIs(session.phase, Phase.START)
+        self.assertEqual(session.level_number, 1)
+
+
 class UndoTest(unittest.TestCase):
     def setUp(self) -> None:
         self.session = Session([PAIR])

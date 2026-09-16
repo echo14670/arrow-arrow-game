@@ -19,6 +19,9 @@ HUD_RECT = pygame.Rect(24, 20, config.WINDOW_WIDTH - 48, 132)
 BUTTON_ROW_TOP = 652
 OVERLAY_RECT = pygame.Rect(250, 170, 400, 380)
 FINAL_RECT = pygame.Rect(150, 120, 600, 480)
+LEVEL_SELECT_RECT = pygame.Rect(140, 96, 620, 528)
+LEVEL_ROW_HEIGHT = 44
+LEVEL_ROW_GAP = 8
 
 
 class Screen:
@@ -52,7 +55,7 @@ class Screen:
 
 
 class StartScreen(Screen):
-    """开始界面：标题、玩法说明、开始按钮。"""
+    """开始界面：标题、玩法说明、开始 / 选关按钮，以及选关面板。"""
 
     RULES = (
         "棋盘上散布着朝向上、下、左、右的箭头。",
@@ -67,28 +70,100 @@ class StartScreen(Screen):
         width = config.WINDOW_WIDTH
         self.btn_start = Button(
             "开始游戏",
-            (width // 2 - 130, 572, 260, 58),
+            (width // 2 - 254, 572, 240, 58),
             manager.start_game,
             primary=True,
             font_size=config.FONT_SIZE_H1,
         )
-        self.buttons = [self.btn_start]
+        self.btn_level_select = Button(
+            "选择关卡 (L)",
+            (width // 2 + 14, 572, 240, 58),
+            manager.open_level_select,
+            font_size=config.FONT_SIZE_H1,
+        )
+        self.btn_back = Button(
+            "返回主菜单 (L)",
+            (LEVEL_SELECT_RECT.centerx - 130, LEVEL_SELECT_RECT.bottom - 72, 260, 46),
+            manager.back_to_menu,
+        )
+        self.buttons = [self.btn_start, self.btn_level_select]
+
+    # ---------- 选关面板 ----------
+
+    @staticmethod
+    def level_row_rect(index: int) -> pygame.Rect:
+        """选关面板里第 index 行（从 0 开始）的矩形。"""
+        top = LEVEL_SELECT_RECT.top + 120 + index * (LEVEL_ROW_HEIGHT + LEVEL_ROW_GAP)
+        return pygame.Rect(
+            LEVEL_SELECT_RECT.left + 40,
+            top,
+            LEVEL_SELECT_RECT.width - 80,
+            LEVEL_ROW_HEIGHT,
+        )
+
+    def level_at(self, pos: tuple[int, int]) -> int | None:
+        """鼠标落在第几关的行上；不在任何一行上返回 None。"""
+        for index in range(self.session.level_count):
+            if self.level_row_rect(index).collidepoint(pos):
+                return index
+        return None
+
+    def active_buttons(self) -> list[Button]:
+        if self.session.phase is Phase.LEVEL_SELECT:
+            return [self.btn_back]
+        return [self.btn_start, self.btn_level_select]
+
+    # ---------- 事件 ----------
 
     def handle_event(self, event: pygame.event.Event) -> bool:
-        if event.type == pygame.KEYDOWN and event.key in (
-            pygame.K_RETURN,
-            pygame.K_KP_ENTER,
-            pygame.K_SPACE,
-        ):
-            self.manager.start_game()
+        phase = self.session.phase
+        if event.type == pygame.KEYDOWN and self._handle_key(event.key, phase):
             return True
+        if (
+            phase is Phase.LEVEL_SELECT
+            and event.type == pygame.MOUSEBUTTONDOWN
+            and event.button == 1
+        ):
+            index = self.level_at(event.pos)
+            if index is not None:
+                self.manager.start_at_level(index)
+                return True
         return super().handle_event(event)
+
+    def _handle_key(self, key: int, phase: Phase) -> bool:
+        if phase is Phase.START:
+            if key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                self.manager.start_game()
+                return True
+            if key == pygame.K_l:
+                self.manager.open_level_select()
+                return True
+        elif phase is Phase.LEVEL_SELECT:
+            if key == pygame.K_l:
+                self.manager.back_to_menu()
+                return True
+            if pygame.K_1 <= key <= pygame.K_9:
+                index = key - pygame.K_1
+                if index < self.session.level_count:
+                    self.manager.start_at_level(index)
+                    return True
+        return False
+
+    # ---------- 绘制 ----------
 
     def draw(self, surface: pygame.Surface) -> None:
         surface.fill(config.COLOR_BACKGROUND)
+        if self.session.phase is Phase.LEVEL_SELECT:
+            self.draw_level_select(surface)
+            self.draw_buttons(surface)
+            return
         width = config.WINDOW_WIDTH
         theme.draw_text(
-            surface, "一箭又一箭", config.FONT_SIZE_TITLE, config.COLOR_ACCENT, center=(width // 2, 96)
+            surface,
+            "一箭又一箭",
+            config.FONT_SIZE_TITLE,
+            config.COLOR_ACCENT,
+            center=(width // 2, 96),
         )
         theme.draw_text(
             surface,
@@ -103,13 +178,11 @@ class StartScreen(Screen):
         pygame.draw.rect(surface, config.COLOR_BORDER, panel, width=2, border_radius=18)
 
         demo_y = panel.top + 52
-        demo_directions = ("^", ">", "v", "<")
-        for index, char in enumerate(demo_directions):
-            direction = Direction.from_char(char)
-            size = 44
-            image = arrow.arrow_surface(size, direction, config.COLOR_ACCENT)
-            rect = image.get_rect(center=(panel.centerx - 150 + index * 100, demo_y))
-            surface.blit(image, rect)
+        for index, char in enumerate(("^", ">", "v", "<")):
+            image = arrow.arrow_surface(44, Direction.from_char(char), config.COLOR_ACCENT)
+            surface.blit(
+                image, image.get_rect(center=(panel.centerx - 150 + index * 100, demo_y))
+            )
 
         line_y = demo_y + 56
         for index, text in enumerate(self.RULES):
@@ -122,13 +195,58 @@ class StartScreen(Screen):
             )
         theme.draw_text(
             surface,
-            "键盘：Enter 开始 / R 重新开始 / U 撤销 / Esc 退出",
+            "键盘：Enter 开始 / L 选择关卡 / R 重新开始 / U 撤销 / Esc 退出",
             config.FONT_SIZE_SMALL,
             config.COLOR_TEXT_DIM,
-            center=(width // 2, 556),
+            center=(width // 2, 554),
         )
         self.draw_buttons(surface)
 
+    def draw_level_select(self, surface: pygame.Surface) -> None:
+        """选关面板：列出全部关卡，点任意一行就从该关开始。"""
+        pygame.draw.rect(surface, config.COLOR_PANEL, LEVEL_SELECT_RECT, border_radius=18)
+        pygame.draw.rect(
+            surface, config.COLOR_BORDER, LEVEL_SELECT_RECT, width=2, border_radius=18
+        )
+        theme.draw_text(
+            surface,
+            "选择关卡",
+            config.FONT_SIZE_H1,
+            config.COLOR_ACCENT,
+            centerx=LEVEL_SELECT_RECT.centerx,
+            top=LEVEL_SELECT_RECT.top + 30,
+        )
+        theme.draw_text(
+            surface,
+            "点击任意一关直接开始，也可以按数字键 1 - 6",
+            config.FONT_SIZE_SMALL,
+            config.COLOR_TEXT_DIM,
+            centerx=LEVEL_SELECT_RECT.centerx,
+            top=LEVEL_SELECT_RECT.top + 82,
+        )
+        hovered = self.level_at(self.pointer)
+        for index, level in enumerate(self.session.levels):
+            rect = self.level_row_rect(index)
+            if index == hovered:
+                pygame.draw.rect(surface, config.COLOR_PANEL_LIGHT, rect, border_radius=10)
+                pygame.draw.rect(surface, config.COLOR_ACCENT, rect, width=2, border_radius=10)
+            else:
+                pygame.draw.rect(surface, config.COLOR_BACKGROUND, rect, border_radius=10)
+                pygame.draw.rect(surface, config.COLOR_BORDER, rect, width=2, border_radius=10)
+            theme.draw_text(
+                surface,
+                level.name,
+                config.FONT_SIZE_BODY,
+                config.COLOR_TEXT,
+                topleft=(rect.left + 20, rect.centery - 15),
+            )
+            theme.draw_text(
+                surface,
+                f"{level.rows}×{level.cols} · {level.arrow_count} 箭头 · 失误 {level.mistakes}",
+                config.FONT_SIZE_SMALL,
+                config.COLOR_TEXT_DIM,
+                topright=(rect.right - 20, rect.centery - 13),
+            )
 
 class GameScreen(Screen):
     """游戏界面：HUD + 棋盘 + 结果面板。"""
@@ -424,7 +542,7 @@ class ScreenManager:
 
     @property
     def current(self) -> Screen:
-        if self.session.phase is Phase.START:
+        if self.session.phase in (Phase.START, Phase.LEVEL_SELECT):
             return self.start_screen
         return self.game_screen
 
@@ -442,6 +560,14 @@ class ScreenManager:
     def start_game(self) -> None:
         self.animations.clear()
         self.session.start_game()
+
+    def open_level_select(self) -> None:
+        self.animations.clear()
+        self.session.open_level_select()
+
+    def start_at_level(self, index: int) -> None:
+        self.animations.clear()
+        self.session.start_at_level(index)
 
     def restart_level(self) -> None:
         self.animations.clear()

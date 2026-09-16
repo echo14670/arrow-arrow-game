@@ -98,6 +98,48 @@ class UiSmokeTest(unittest.TestCase):
         self.assertEqual(session.board.to_grid(), initial)
         self.assertIs(session.phase, Phase.PLAYING)
 
+    def test_level_select_button_opens_the_panel(self) -> None:
+        start = self.game.screens.start_screen
+        self.click(start.btn_level_select.rect.center)
+        self.assertIs(self.game.session.phase, Phase.LEVEL_SELECT)
+        self.game.draw()  # 选关面板必须能正常绘制
+
+    def test_clicking_a_level_row_starts_that_level(self) -> None:
+        start = self.game.screens.start_screen
+        self.click(start.btn_level_select.rect.center)
+        self.click(start.level_row_rect(3).center)
+        self.assertIs(self.game.session.phase, Phase.PLAYING)
+        self.assertEqual(self.game.session.level_number, 4)
+
+    def test_level_select_back_button_returns_to_menu(self) -> None:
+        start = self.game.screens.start_screen
+        self.click(start.btn_level_select.rect.center)
+        self.click(start.btn_back.rect.center)
+        self.assertIs(self.game.session.phase, Phase.START)
+
+    def test_number_key_starts_a_level(self) -> None:
+        self.game.session.open_level_select()
+        pygame.event.post(
+            pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_5, "mod": 0, "unicode": "5"})
+        )
+        self.game.handle_events()
+        self.assertIs(self.game.session.phase, Phase.PLAYING)
+        self.assertEqual(self.game.session.level_number, 5)
+
+    def test_survives_restarting_pygame(self) -> None:
+        """pygame 重新初始化后仍然能正常绘制。
+
+        字体与箭头贴图是带缓存的，pygame.quit() 之后再 init，缓存里的对象
+        会引用已经释放的底层资源；如果不丢弃缓存，第二次绘制会让进程直接
+        崩溃（访问违例 0xC0000005）。
+        """
+        self.game.draw()
+        pygame.quit()
+        second = Game(headless=True)
+        second.draw()
+        second.session.start_game()
+        second.draw()
+
     def test_every_phase_can_be_rendered(self) -> None:
         surfaces = []
 

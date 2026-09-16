@@ -14,6 +14,7 @@ class Phase(Enum):
     """游戏当前所处的大阶段。"""
 
     START = "start"
+    LEVEL_SELECT = "level_select"
     PLAYING = "playing"
     LEVEL_CLEAR = "level_clear"
     FAILED = "failed"
@@ -96,14 +97,20 @@ class Session:
 
     def start_game(self) -> None:
         """从开始界面进入第一关。"""
-        self.level_index = 0
-        self._cleared.clear()
-        self.total_time = 0.0
-        self.total_clicks = 0
-        self.total_mistakes = 0
-        self.total_undos = 0
-        self.level_restarts = 0
-        self._load_level(0)
+        self.start_at_level(0)
+
+    def open_level_select(self) -> None:
+        """从开始界面进入选关界面。"""
+        if self.phase is not Phase.START:
+            return
+        self.phase = Phase.LEVEL_SELECT
+
+    def start_at_level(self, index: int) -> None:
+        """从指定关卡开始新的一局（计时与统计全部重新计算）。"""
+        if not 0 <= index < len(self.levels):
+            raise IndexError(f"关卡序号超出范围: {index}")
+        self._reset_progress()
+        self._load_level(index)
         self.phase = Phase.PLAYING
 
     def click_cell(self, row: int, col: int) -> ClickResult:
@@ -159,9 +166,7 @@ class Session:
 
     def back_to_menu(self) -> None:
         """回到开始界面并重置进度。"""
-        self.level_index = 0
-        self._cleared.clear()
-        self.total_time = 0.0
+        self._reset_progress()
         self._load_level(0)
         self.phase = Phase.START
 
@@ -186,6 +191,15 @@ class Session:
         }
 
     # ---------- 内部 ----------
+
+    def _reset_progress(self) -> None:
+        """把一局的统计清零（选关重开时也要复位）。"""
+        self._cleared.clear()
+        self.total_time = 0.0
+        self.total_clicks = 0
+        self.total_mistakes = 0
+        self.total_undos = 0
+        self.level_restarts = 0
 
     def _load_level(self, index: int) -> None:
         level = self.levels[index]
