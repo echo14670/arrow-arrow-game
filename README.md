@@ -52,6 +52,14 @@
 
 ## 安装与运行
 
+### 方式一：下载免安装 exe
+
+到 [Releases](https://github.com/echo14670/arrow-arrow-game/releases/latest) 下载 `ArrowArrowGame.exe`，
+双击即可运行，不需要安装 Python。如果首次运行被 Windows SmartScreen 提示「未知发布者」，
+点「更多信息 → 仍要运行」即可。
+
+### 方式二：从源码运行
+
 ```bash
 # 1. 安装依赖
 pip install -r requirements.txt
@@ -219,6 +227,8 @@ python tools/build_exe.py
 ```
 
 生成 `dist/ArrowArrowGame.exe`，双击即可运行，无需安装 Python。
+本仓库已经在 [v1.0.0 Release](https://github.com/echo14670/arrow-arrow-game/releases/tag/v1.0.0)
+里附上了打包好的 exe，可以直接下载。
 
 ## 素材来源说明
 
