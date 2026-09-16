@@ -21,6 +21,10 @@ from .widgets import Button
 
 HUD_RECT = pygame.Rect(24, 20, config.WINDOW_WIDTH - 48, 132)
 BUTTON_ROW_TOP = 652
+BOTTOM_BUTTON_WIDTH = 190
+BOTTOM_BUTTON_GAP = 20
+BOTTOM_BUTTON_HEIGHT = 46
+BOTTOM_BUTTON_COUNT = 3
 OVERLAY_RECT = pygame.Rect(250, 170, 400, 380)
 FINAL_RECT = pygame.Rect(150, 120, 600, 480)
 LEVEL_SELECT_RECT = pygame.Rect(140, 72, 620, 584)
@@ -43,6 +47,13 @@ DIFFICULTY_GAP = 18
 DIFFICULTY_BUTTON_HEIGHT = 48
 CUSTOM_GENERATE_TOP = 404
 CUSTOM_BACK_TOP = 462
+
+
+def bottom_button_rect(index: int) -> pygame.Rect:
+    """游戏界面底部按钮行里第 index 个按钮（整行水平居中）。"""
+    total = BOTTOM_BUTTON_COUNT * BOTTOM_BUTTON_WIDTH + (BOTTOM_BUTTON_COUNT - 1) * BOTTOM_BUTTON_GAP
+    left = (config.WINDOW_WIDTH - total) // 2 + index * (BOTTOM_BUTTON_WIDTH + BOTTOM_BUTTON_GAP)
+    return pygame.Rect(left, BUTTON_ROW_TOP, BOTTOM_BUTTON_WIDTH, BOTTOM_BUTTON_HEIGHT)
 
 
 class Screen:
@@ -514,11 +525,11 @@ class GameScreen(Screen):
     def __init__(self, session: Session, manager: "ScreenManager") -> None:
         super().__init__(session, manager)
         self.animations: AnimationManager = manager.animations
-        center_x = config.WINDOW_WIDTH // 2
-        self.btn_restart = Button(
-            "重新开始 (R)", (center_x - 200, BUTTON_ROW_TOP, 190, 46), manager.restart_level
+        self.btn_restart = Button("重新开始 (R)", bottom_button_rect(0), manager.restart_level)
+        self.btn_undo = Button("撤销 (U)", bottom_button_rect(1), manager.undo)
+        self.btn_bottom_menu = Button(
+            "返回主菜单 (M)", bottom_button_rect(2), manager.back_to_menu
         )
-        self.btn_undo = Button("撤销 (U)", (center_x + 10, BUTTON_ROW_TOP, 190, 46), manager.undo)
         panel = OVERLAY_RECT
         self.btn_next = Button(
             "下一关 (Enter)",
@@ -555,7 +566,7 @@ class GameScreen(Screen):
     def active_buttons(self) -> list[Button]:
         phase = self.session.phase
         if phase is Phase.PLAYING:
-            return [self.btn_restart, self.btn_undo]
+            return [self.btn_restart, self.btn_undo, self.btn_bottom_menu]
         if phase is Phase.LEVEL_CLEAR:
             return [self.btn_next, self.btn_menu]
         if phase is Phase.FAILED:
@@ -586,6 +597,14 @@ class GameScreen(Screen):
             return True
         if key == pygame.K_u and phase is Phase.PLAYING:
             self.manager.undo()
+            return True
+        if key == pygame.K_m and phase in (
+            Phase.PLAYING,
+            Phase.LEVEL_CLEAR,
+            Phase.FAILED,
+            Phase.ALL_CLEAR,
+        ):
+            self.manager.back_to_menu()
             return True
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
             if phase is Phase.LEVEL_CLEAR:
@@ -632,6 +651,7 @@ class GameScreen(Screen):
             if phase is Phase.PLAYING:
                 self.btn_restart.draw(surface)
                 self.btn_undo.draw(surface)
+                self.btn_bottom_menu.draw(surface)
             return
         if phase is Phase.LEVEL_CLEAR:
             self.draw_level_clear(surface)

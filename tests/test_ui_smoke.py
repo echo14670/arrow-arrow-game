@@ -254,6 +254,64 @@ class UiSmokeTest(unittest.TestCase):
         self.assertIs(self.game.session.phase, Phase.PLAYING)
         self.assertEqual(self.game.session.level_number, index + 1)
 
+    # ---------- 返回主菜单 ----------
+
+    def test_every_level_screen_has_a_back_to_menu_button(self) -> None:
+        """内置关卡与自定义关卡的界面都带「返回主菜单」。"""
+        session = self.game.session
+        for index in range(session.level_count):
+            with self.subTest(level=index + 1):
+                session.start_at_level(index)
+                self.assertIn(self.screen.btn_bottom_menu, self.screen.active_buttons())
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        self.click(start.btn_generate.rect.center)
+        self.assertIn(self.screen.btn_bottom_menu, self.screen.active_buttons())
+
+    def test_bottom_menu_button_aborts_the_level(self) -> None:
+        self.start_game()
+        session = self.game.session
+        session.click_cell(*self.find(True))
+        self.screen.animations.clear()
+        self.assertNotEqual(session.board.to_grid(), list(session.levels[0].grid))
+        self.click(self.screen.btn_bottom_menu.rect.center)
+        self.assertIs(session.phase, Phase.START)
+        self.assertEqual(session.level_number, 1)
+        self.assertEqual(session.cleared_levels, 0)
+        self.assertEqual(session.total_clicks, 0)
+        self.assertEqual(session.arrows_left, session.arrows_total)
+        self.assertEqual(session.board.to_grid(), list(session.levels[0].grid))
+        self.game.draw()  # 回到主菜单之后要能正常绘制
+
+    def test_bottom_menu_button_aborts_a_custom_level(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        self.game.session.custom_setup.set_value(FIELD_ARROWS, 5)
+        self.click(start.btn_generate.rect.center)
+        session = self.game.session
+        self.assertTrue(session.is_custom_level)
+        self.click(self.screen.btn_bottom_menu.rect.center)
+        self.assertIs(session.phase, Phase.START)
+        self.assertEqual(session.level_number, 1)
+        self.assertTrue(session.has_custom_level, "自定义关卡应该还留在选关列表里")
+
+    def test_m_key_returns_to_the_menu(self) -> None:
+        self.start_game()
+        self.press(pygame.K_m)
+        self.assertIs(self.game.session.phase, Phase.START)
+        self.assertEqual(self.game.session.level_number, 1)
+
+    def test_bottom_menu_is_locked_during_an_animation(self) -> None:
+        """动画期间输入被锁定，返回主菜单也不例外。"""
+        self.start_game()
+        self.screen.click_cell(*self.find(True))
+        self.assertTrue(self.screen.animations.busy)
+        self.click(self.screen.btn_bottom_menu.rect.center)
+        self.assertIs(self.game.session.phase, Phase.PLAYING)
+        self.screen.animations.clear()
+        self.click(self.screen.btn_bottom_menu.rect.center)
+        self.assertIs(self.game.session.phase, Phase.START)
+
     def test_survives_restarting_pygame(self) -> None:
         """pygame 重新初始化后仍然能正常绘制。
 
