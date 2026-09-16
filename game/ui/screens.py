@@ -31,21 +31,18 @@ CUSTOM_BUTTON_HEIGHT = 46
 CUSTOM_BUTTON_GAP = 10
 
 # 「自定义关卡」面板：下面的数值都是相对 CUSTOM_RECT.top 的偏移
-CUSTOM_RECT = pygame.Rect(190, 76, 520, 568)
+CUSTOM_RECT = pygame.Rect(190, 76, 520, 538)
 CUSTOM_FIELD_TOP = 130
 CUSTOM_FIELD_STEP = 58
 CUSTOM_STEPPER_SIZE = 44
 CUSTOM_VALUE_WIDTH = 110
-CUSTOM_ARROWS_HINT_TOP = 292
-DIFFICULTY_LABEL_TOP = 318
-DIFFICULTY_TOP = 348
+CUSTOM_FILL_TOP = 282
+DIFFICULTY_TOP = 330
 DIFFICULTY_WIDTH = 148
 DIFFICULTY_GAP = 18
 DIFFICULTY_BUTTON_HEIGHT = 48
-CUSTOM_HINT_LINE_TOP = 406
-CUSTOM_HINT_LINE_STEP = 26
-CUSTOM_GENERATE_TOP = 462
-CUSTOM_BACK_TOP = 516
+CUSTOM_GENERATE_TOP = 404
+CUSTOM_BACK_TOP = 462
 
 
 class Screen:
@@ -134,7 +131,7 @@ class StartScreen(Screen):
             "填满",
             (
                 CUSTOM_RECT.right - 36 - 74,
-                CUSTOM_RECT.top + CUSTOM_ARROWS_HINT_TOP - 16,
+                CUSTOM_RECT.top + CUSTOM_FILL_TOP,
                 74,
                 32,
             ),
@@ -427,7 +424,7 @@ class StartScreen(Screen):
         )
         theme.draw_text(
             surface,
-            "点击任意一关直接开始，数字键 1 - 9 也可以；最后一行的按钮可以自己造一关",
+            "键盘：数字键 1 - 9 选关 / C 自定义关卡 / L 返回主菜单",
             config.FONT_SIZE_SMALL,
             config.COLOR_TEXT_DIM,
             centerx=LEVEL_SELECT_RECT.centerx,
@@ -461,7 +458,6 @@ class StartScreen(Screen):
 
     def draw_custom_setup(self, surface: pygame.Surface) -> None:
         """自定义关卡面板：地图大小、箭头数量与难度。"""
-        setup = self.session.custom_setup
         pygame.draw.rect(surface, config.COLOR_PANEL, CUSTOM_RECT, border_radius=18)
         pygame.draw.rect(surface, config.COLOR_BORDER, CUSTOM_RECT, width=2, border_radius=18)
         theme.draw_text(
@@ -472,44 +468,8 @@ class StartScreen(Screen):
             centerx=CUSTOM_RECT.centerx,
             top=CUSTOM_RECT.top + 22,
         )
-        theme.draw_text(
-            surface,
-            "随机生成，生成器保证这一关一定有解",
-            config.FONT_SIZE_SMALL,
-            config.COLOR_TEXT_DIM,
-            centerx=CUSTOM_RECT.centerx,
-            top=CUSTOM_RECT.top + 70,
-        )
         for index, field in enumerate(FIELDS):
             self.draw_stepper(surface, field, index)
-        theme.draw_text(
-            surface,
-            f"范围 {setup.min_arrows} - {setup.max_arrows}，填满 = 每个格子一个箭头",
-            config.FONT_SIZE_SMALL,
-            config.COLOR_TEXT_DIM,
-            topleft=(CUSTOM_RECT.left + 36, CUSTOM_RECT.top + CUSTOM_ARROWS_HINT_TOP - 10),
-        )
-        theme.draw_text(
-            surface,
-            "难度（按 best_layout 评分挑候选）",
-            config.FONT_SIZE_SMALL,
-            config.COLOR_TEXT_DIM,
-            centerx=CUSTOM_RECT.centerx,
-            top=CUSTOM_RECT.top + DIFFICULTY_LABEL_TOP,
-        )
-        hints = (
-            "难度越高，开局被挡住的箭头越多、越需要做选择",
-            f"当前设置：{setup.summary()}",
-        )
-        for index, text in enumerate(hints):
-            theme.draw_text(
-                surface,
-                text,
-                config.FONT_SIZE_SMALL,
-                config.COLOR_TEXT_DIM,
-                centerx=CUSTOM_RECT.centerx,
-                top=CUSTOM_RECT.top + CUSTOM_HINT_LINE_TOP + index * CUSTOM_HINT_LINE_STEP,
-            )
         theme.draw_text(
             surface,
             "键盘：↑↓ 选字段 / ←→ 改数值 / 1-3 选难度 / F 填满 / Enter 生成",
