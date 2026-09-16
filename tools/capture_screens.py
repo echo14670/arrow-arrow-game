@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -20,7 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from game.app import Game  # noqa: E402
+from game.generator import Difficulty  # noqa: E402
 from game.session import Phase  # noqa: E402
+from game.setup import FIELD_ARROWS, FIELD_COLS, FIELD_ROWS  # noqa: E402
 from game.solver import solve  # noqa: E402
 from game.ui import layout  # noqa: E402
 
@@ -125,6 +128,27 @@ def main() -> int:
         else:
             session.next_level()
     shoot("07-all-clear.png")
+
+    # 9. 自定义关卡设置面板：地图大小 / 箭头数量 / 难度
+    session.back_to_menu()
+    session.open_level_select()
+    session.open_custom_setup()
+    setup = session.custom_setup
+    setup.set_value(FIELD_ROWS, 5)
+    setup.set_value(FIELD_COLS, 5)
+    setup.set_value(FIELD_ARROWS, 12)
+    setup.set_difficulty(Difficulty.HIGH)
+    setup.focus_on(FIELD_ARROWS)
+    game.screens.update(0.0)
+    shoot("01c-custom-setup.png")
+
+    # 10. 玩自定义关卡（固定随机种子，保证截图可以复现）
+    session.start_generated_custom_level(random.Random(2026))
+    game.screens.update(0.0)
+    screen.pointer = layout.cell_rect(
+        layout.board_rect(session.board.rows, session.board.cols), *first_free(session)
+    ).center
+    shoot("01d-custom-level.png")
 
     return 0
 

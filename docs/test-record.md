@@ -17,9 +17,9 @@
 
 ```text
 $ python -m unittest discover -s tests -t . -v
-......................................................................
+.....................................................................................................................................
 ----------------------------------------------------------------------
-Ran 70 tests in 1.835s
+Ran 133 tests in 4.380s
 
 OK
 ```
@@ -28,9 +28,11 @@ OK
 | --- | --- | --- |
 | `tests/test_board.py` | 20 | 棋盘构造、字符解析、四种方向的路径检测、边界与负索引回归 |
 | `tests/test_levels.py` | 8 | 关卡数据合法性、箭头数量、每关可解、解序列可清空棋盘 |
-| `tests/test_session.py` | 30 | 失误、通关、失败、重新开始、撤销、计时、统计、选择关卡 |
-| `tests/test_ui_smoke.py` | 12 | 界面层事件接线、六个阶段渲染、选关交互、pygame 重启回归 |
-| **合计** | **70** | 全部通过 |
+| `tests/test_generator.py` | 19 | 生成参数夹紧、箭头数量上限、难度评分排序、2×2–6×6 全部箭头数量都能生成可解关卡 |
+| `tests/test_setup.py` | 19 | 自定义表单的范围夹紧、棋盘缩小后箭头数量联动、难度切换与生成 |
+| `tests/test_session.py` | 44 | 失误、通关、失败、重新开始、撤销、计时、统计、选择关卡、自定义关卡流程 |
+| `tests/test_ui_smoke.py` | 23 | 界面层事件接线、八个阶段渲染、选关与自定义面板交互、pygame 重启回归 |
+| **合计** | **133** | 全部通过 |
 
 ## 3. 作业要求的测试用例（T01–T06）
 
@@ -87,11 +89,46 @@ OK
 | 6 | 统计错误 | 全部通关界面显示「通关 7 / 6 关」 | 重复通关同一关会重复计数；改为用集合记录已通关关卡，重复通关只算一次 | 通过 |
 | 7 | 环境问题 | `pip install pygame` 长时间无进展 | 直连 PyPI 速度过慢；改用清华镜像 `-i https://pypi.tuna.tsinghua.edu.cn/simple` | 安装成功 |
 | 8 | 进程崩溃（新增选关功能后） | 测试进程在第二个「会绘制界面」的用例上直接崩溃，退出码 `0xC0000005`（访问违例） | 字体与箭头贴图被 `lru_cache` 缓存，`pygame.quit()` 后底层资源已释放，重新 `init` 再绘制就会崩；在两个模块加 `clear_cache()`，`Game` 初始化时调用 | 加 `test_survives_restarting_pygame` 回归用例，70 条全绿 |
+| 9 | 生成器覆盖不到高密度（新增自定义关卡时） | 箭头数量接近格子总数（例如 6×6 摆 36 个）时，随机摆放反复摆不满，`generate()` 拿不到任何候选 | 只靠「随机摆放」无法覆盖全部参数；补一套「洋葱式摆放」兜底：按离最近的边分层，从内层往外层逆向摆放，于是 1..行×列 的任意数量都能构造出可解关卡 | 2×2–6×6 共 325 组「大小 × 箭头数」自检，箭头数量全部正确、求解器复核全部通过 |
+| 10 | 参数联动缺失 | 把棋盘从 6×6 改小到 3×3 之后，箭头数量仍然可以是 36，超过新的格子总数 | 行/列变化后没有重新夹紧箭头数量；在 `CustomSetup.set_value()` 里补上「先改大小、再夹箭头」，界面上到上下限时把 `＋` / `－` 置灰 | 新增用例 `test_shrinking_the_board_clamps_the_arrow_count` 等，通过 |
+| 11 | 返回值语义不一致 | `CustomSetup._clamp_arrows()` 不管有没有变化都返回 `True`，和 `set_value()` 文档里「有变化才返回 True」矛盾 | 改成分支各自记录变化、只有真的夹紧时才返回 `True` | 相关用例通过 |
+| 12 | 测试样例本身无解 | 想用 `(">>", "<.")` 作为「被挡得更多」的对照样例，`score()` 却返回 -1，用例必然失败 | 这三个箭头互相挡死、谁也飞不出去，本身就是无解布局；换成 `(">v", "<.")`，分数 0.87 明显高于对照样例的 0.15 | 用例通过 |
+| 13 | 界面用例被新阶段影响 | 新增自定义面板后，`test_every_phase_can_be_rendered` 在「自定义面板」阶段直接点「开始游戏」按钮不会生效（该按钮不属于当前面板），后续快照全错位 | 快照序列里先 `back_to_menu()` 再开始游戏；同时把自定义面板与选关界面也纳入快照 | 快照数从 5 改为 7，通过 |
 
 ## 6. 运行与打包验证
 
 | 验证项 | 命令 | 结果 |
 | --- | --- | --- |
-| 离屏渲染截图 | `python tools/capture_screens.py` | 生成 8 张截图（含选关界面），无异常 |
-| 界面冒烟测试 | `python -m unittest tests.test_ui_smoke -v` | 12 个用例通过，六个阶段渲染正常 |
+| 离屏渲染截图 | `python tools/capture_screens.py` | 生成 10 张截图（含选关界面、自定义面板与自定义关卡），无异常 |
+| 界面冒烟测试 | `python -m unittest tests.test_ui_smoke -v` | 23 个用例通过，八个阶段渲染正常 |
 | 关卡数据自检 | `python tools/level_stats.py` | 6 关合计 54 个箭头，全部可解 |
+| 生成器全参数自检 | 遍历 2×2–6×6 的每种大小、每个箭头数量、三档难度 | 975 组参数全部「箭头数量正确 + 可解」 |
+
+## 7. 自定义关卡（附加功能）的测试补充
+
+| 编号 | 测试内容 | 预期结果 | 对应自动化用例 | 实际结果 | 是否通过 |
+| --- | --- | --- | --- | --- | --- |
+| C01 | 选关界面点「＋ 自定义关卡」 | 进入自定义关卡设置面板 | `test_custom_button_opens_the_setup_panel`、`test_c_key_opens_the_custom_panel` | 阶段变为「自定义关卡设置」，面板正常绘制 | 通过 |
+| C02 | 步进按钮调大 / 调小行数 | 数值按 1 增减，到上下限后按钮失效 | `test_stepper_buttons_change_the_board_size`、`test_plus_button_is_disabled_at_the_limit` | 行数 5 → 6 → 5；到 6 之后再点「＋」不再变化 | 通过 |
+| C03 | 棋盘从 6×6 改成 5×6 | 箭头数量自动夹到新上限 30 | `test_shrinking_the_board_clamps_the_arrows_in_the_panel`、`test_shrinking_the_board_clamps_the_arrow_count` | 36 → 30，面板数值同步刷新 | 通过 |
+| C04 | 箭头数量超出格子总数 | 夹到「行 × 列」，下限 1 | `test_arrows_stay_between_one_and_the_cell_count`、`test_max_arrows_follows_the_board_size` | 2×3 棋盘输入 99 → 6，输入 -99 → 1 | 通过 |
+| C05 | 三档难度用 best_layout 评分区分 | 高难度分数 ≥ 中 ≥ 低 | `test_difficulty_picks_from_the_same_candidate_pool`、`test_mistake_budget_follows_the_difficulty` | 同一批候选下三档评分单调不减；高难度失误次数更少 | 通过 |
+| C06 | 2×2–6×6、每个箭头数量都生成一关 | 箭头数量正确且一定有解 | `test_every_size_and_density_is_solvable`、`test_onion_layout_handles_every_density` | 325 组参数全部「数量正确 + 可解 + 解序列长度等于箭头数」 | 通过 |
+| C07 | 生成并开始自定义关卡 | 进入第 7 关并能正常通关 | `test_generate_button_starts_a_custom_level`、`test_custom_level_can_be_cleared_and_is_the_last_one` | HUD 显示「关卡 7 / 7」，清空后进入「全部通关」 | 通过 |
+| C08 | 重复生成自定义关卡 | 只占一个槽位（列表仍是 7 行） | `test_generating_twice_replaces_the_same_slot` | 关卡数量保持 7，最后一行换成新的布局 | 通过 |
+| C09 | 自定义关卡里重新开始 / 撤销 | 布局与失误次数还原，撤销不消耗失误 | `test_restart_restores_the_custom_level`、`test_undo_works_inside_a_custom_level` | 与内置关卡行为一致 | 通过 |
+| C10 | 界面自检：自定义面板与自定义关卡都能画出来 | 不抛异常、面板里各控件不重叠 | `test_every_phase_can_be_rendered`（7 张快照）、`tools/capture_screens.py` | 截图从 8 张增加到 10 张，人工核对无重叠 | 通过 |
+
+本人实际试玩自定义关卡的记录：
+
+| 设置 | 是否通关 | 备注 |
+| --- | --- | --- |
+| 3×3 / 4 箭头 / 低难度 | 待填写 | |
+| 5×5 / 12 箭头 / 中难度 | 待填写 | |
+| 6×6 / 20 箭头 / 高难度 | 待填写 | 开局被挡的箭头明显更多 |
+
+## 8. 结论
+
+- 全部 133 条自动化测试通过，作业要求的 T01–T06 与界面冒烟测试都在其中。
+- 内置 6 关与随机生成的自定义关卡都由求解器验证过存在通关顺序，不存在「实际上无法通关」的关卡。
+- 内置关卡由本人逐关试玩确认（见第 4 节表格），自定义关卡的试玩记录见第 7 节。
