@@ -33,6 +33,15 @@ def load_font(size: int) -> pygame.font.Font:
     return pygame.font.Font(None, size)
 
 
+def clear_cache() -> None:
+    """丢弃缓存的字体对象。
+
+    pygame 重新初始化（quit 后再 init）之后，之前缓存的 Font 会引用已经
+    释放的底层资源，继续使用会导致访问违例，因此必须清空缓存。
+    """
+    load_font.cache_clear()
+
+
 def draw_text(
     surface: pygame.Surface,
     text: str,

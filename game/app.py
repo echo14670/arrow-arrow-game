@@ -9,7 +9,7 @@ import pygame
 
 from . import config
 from .session import Session
-from .ui import screens
+from .ui import arrow, screens, theme
 
 
 class Game:
@@ -24,6 +24,10 @@ class Game:
             os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
             os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
         pygame.init()
+        # pygame 重新初始化后，上一轮会话缓存的字体与贴图会引用已释放的资源，
+        # 继续使用会导致进程崩溃（访问违例），所以这里先丢弃它们
+        theme.clear_cache()
+        arrow.clear_cache()
         pygame.display.set_caption(config.WINDOW_TITLE)
         self.screen = pygame.display.set_mode((config.WINDOW_WIDTH, config.WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()

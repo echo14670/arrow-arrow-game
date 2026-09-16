@@ -40,6 +40,11 @@ def arrow_points(size: int, direction: Direction) -> list[tuple[float, float]]:
     return points
 
 
+def clear_cache() -> None:
+    """丢弃缓存的箭头贴图（pygame 重新初始化后必须调用）。"""
+    arrow_surface.cache_clear()
+
+
 @lru_cache(maxsize=64)
 def arrow_surface(
     size: int, direction: Direction, color: tuple[int, int, int]
