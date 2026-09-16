@@ -360,3 +360,73 @@ class UiSmokeTest(unittest.TestCase):
         self.screen.animations.clear()
         snapshot()  # 全部通关界面
         self.assertEqual(len(surfaces), 7)
+class FullscreenTest(unittest.TestCase):
+    """窗口与全屏切换：快捷键、状态位，以及按键是否被界面层消费。"""
+
+    def setUp(self) -> None:
+        self.game = Game(headless=True)
+
+    def tearDown(self) -> None:
+        pygame.quit()
+
+    def press(self, key: int, mod: int = 0) -> None:
+        pygame.event.post(
+            pygame.event.Event(pygame.KEYDOWN, {"key": key, "mod": mod, "unicode": ""})
+        )
+        self.game.handle_events()
+
+    def test_headless_window_flags_are_plain(self):
+        # 离屏截图必须保持逻辑分辨率，不能引入缩放
+        self.assertEqual(self.game.window_flags(), 0)
+
+    def test_windowed_flags_allow_resize_and_scaling(self):
+        probe = Game.__new__(Game)  # 只查标志位，不开真实窗口
+        probe.headless = False
+        flags = probe.window_flags()
+        self.assertTrue(flags & pygame.RESIZABLE)
+        self.assertTrue(flags & pygame.SCALED)
+
+    def test_toggle_fullscreen_flips_state(self):
+        self.assertFalse(self.game.fullscreen)
+        self.assertTrue(self.game.toggle_fullscreen())
+        self.assertTrue(self.game.fullscreen)
+        self.assertFalse(self.game.toggle_fullscreen())
+        self.assertFalse(self.game.fullscreen)
+
+    def test_set_fullscreen_is_idempotent(self):
+        self.game.set_fullscreen(True)
+        self.game.set_fullscreen(True)
+        self.assertTrue(self.game.fullscreen)
+        self.game.set_fullscreen(False)
+        self.game.set_fullscreen(False)
+        self.assertFalse(self.game.fullscreen)
+    def test_f11_toggles_fullscreen(self):
+        self.press(pygame.K_F11)
+        self.assertTrue(self.game.fullscreen)
+
+    def test_f11_toggles_back_to_windowed(self):
+        self.press(pygame.K_F11)
+        self.press(pygame.K_F11)
+        self.assertFalse(self.game.fullscreen)
+        self.assertTrue(self.game.running)
+
+    def test_alt_enter_toggles_fullscreen(self):
+        self.press(pygame.K_RETURN, pygame.KMOD_ALT)
+        self.assertTrue(self.game.fullscreen)
+
+    def test_plain_enter_is_not_a_shortcut(self):
+        self.press(pygame.K_RETURN)
+        self.assertFalse(self.game.fullscreen)
+        self.assertTrue(self.game.running)
+
+    def test_escape_leaves_fullscreen_before_quitting(self):
+        self.press(pygame.K_F11)
+        self.press(pygame.K_ESCAPE)
+        self.assertTrue(self.game.running, "全屏下按 Esc 应先退回窗口而不是退出")
+        self.assertFalse(self.game.fullscreen)
+        self.press(pygame.K_ESCAPE)
+        self.assertFalse(self.game.running)
+
+    def test_other_keys_still_reach_screens(self):
+        self.press(pygame.K_l)
+        self.assertIs(self.game.session.phase, Phase.LEVEL_SELECT)
