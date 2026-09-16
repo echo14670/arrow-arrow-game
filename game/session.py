@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import random
 from enum import Enum
 from typing import Sequence
 
 from .board import Board
 from .direction import Direction
 from .levels import LEVELS, Level
+from .setup import CustomSetup
 
 
 class Phase(Enum):
@@ -15,6 +17,7 @@ class Phase(Enum):
 
     START = "start"
     LEVEL_SELECT = "level_select"
+    CUSTOM_SETUP = "custom_setup"
     PLAYING = "playing"
     LEVEL_CLEAR = "level_clear"
     FAILED = "failed"
@@ -41,7 +44,10 @@ class Session:
     def __init__(self, levels: Sequence[Level] = LEVELS) -> None:
         if not levels:
             raise ValueError("至少需要一个关卡")
-        self.levels = tuple(levels)
+        self.levels = list(levels)
+        # 自定义关卡永远排在全部内置关卡后面，所以先记下内置关卡的数量
+        self._builtin_count = len(self.levels)
+        self.custom_setup = CustomSetup()
         self.phase = Phase.START
         self.level_index = 0
         self.level_time = 0.0
@@ -71,6 +77,26 @@ class Session:
     @property
     def level_count(self) -> int:
         return len(self.levels)
+
+    @property
+    def builtin_level_count(self) -> int:
+        """内置关卡的数量（自定义关卡排在它们后面）。"""
+        return self._builtin_count
+
+    @property
+    def has_custom_level(self) -> bool:
+        """是否已经生成过自定义关卡。"""
+        return len(self.levels) > self._builtin_count
+
+    @property
+    def custom_level_index(self) -> int:
+        """自定义关卡的序号；还没有生成时返回 -1。"""
+        return self._builtin_count if self.has_custom_level else -1
+
+    @property
+    def is_custom_level(self) -> bool:
+        """当前玩的是不是自定义关卡。"""
+        return self.level_index >= self._builtin_count
 
     @property
     def arrows_left(self) -> int:
@@ -104,6 +130,35 @@ class Session:
         if self.phase is not Phase.START:
             return
         self.phase = Phase.LEVEL_SELECT
+
+    def open_custom_setup(self) -> None:
+        """从选关界面进入「自定义关卡」设置面板。"""
+        if self.phase is not Phase.LEVEL_SELECT:
+            return
+        self.phase = Phase.CUSTOM_SETUP
+
+    def close_custom_setup(self) -> None:
+        """从「自定义关卡」面板退回选关界面。"""
+        if self.phase is not Phase.CUSTOM_SETUP:
+            return
+        self.phase = Phase.LEVEL_SELECT
+
+    def start_custom_level(self, level: Level) -> int:
+        """把生成好的关卡放进自定义关卡槽位并立刻开始，返回它的序号。
+
+        自定义关卡只占一个槽位：再生成一次就替换掉上一次的结果。
+        """
+        if self.has_custom_level:
+            self.levels[self._builtin_count] = level
+        else:
+            self.levels.append(level)
+        index = self._builtin_count
+        self.start_at_level(index)
+        return index
+
+    def start_generated_custom_level(self, rng: random.Random | None = None) -> int:
+        """按 :attr:`custom_setup` 里的设置生成一关并开始。"""
+        return self.start_custom_level(self.custom_setup.build(rng))
 
     def start_at_level(self, index: int) -> None:
         """从指定关卡开始新的一局（计时与统计全部重新计算）。"""
@@ -147,7 +202,7 @@ class Session:
 
     def restart_level(self) -> None:
         """把当前关卡恢复到初始状态（箭头布局与失误次数都还原）。"""
-        if self.phase is Phase.START:
+        if self.phase not in (Phase.PLAYING, Phase.LEVEL_CLEAR, Phase.FAILED):
             return
         self.level_restarts += 1
         self._load_level(self.level_index)

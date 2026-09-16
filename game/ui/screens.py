@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 import pygame
 
 from .. import config
 from ..direction import Direction
+from ..generator import Difficulty
 from ..session import ClickResult, Phase, Session, format_time
+from ..setup import FIELD_LABELS, FIELDS
 from . import arrow, layout, theme
 from .animations import AnimationManager, Collision, FloatingText, FlyOut
 from .widgets import Button
@@ -19,9 +23,29 @@ HUD_RECT = pygame.Rect(24, 20, config.WINDOW_WIDTH - 48, 132)
 BUTTON_ROW_TOP = 652
 OVERLAY_RECT = pygame.Rect(250, 170, 400, 380)
 FINAL_RECT = pygame.Rect(150, 120, 600, 480)
-LEVEL_SELECT_RECT = pygame.Rect(140, 96, 620, 528)
-LEVEL_ROW_HEIGHT = 44
-LEVEL_ROW_GAP = 8
+LEVEL_SELECT_RECT = pygame.Rect(140, 72, 620, 584)
+LEVEL_ROW_HEIGHT = 42
+LEVEL_ROW_GAP = 6
+LEVEL_ROW_TOP = 112
+CUSTOM_BUTTON_HEIGHT = 46
+CUSTOM_BUTTON_GAP = 10
+
+# 「自定义关卡」面板：下面的数值都是相对 CUSTOM_RECT.top 的偏移
+CUSTOM_RECT = pygame.Rect(190, 76, 520, 568)
+CUSTOM_FIELD_TOP = 130
+CUSTOM_FIELD_STEP = 58
+CUSTOM_STEPPER_SIZE = 44
+CUSTOM_VALUE_WIDTH = 110
+CUSTOM_ARROWS_HINT_TOP = 292
+DIFFICULTY_LABEL_TOP = 318
+DIFFICULTY_TOP = 348
+DIFFICULTY_WIDTH = 148
+DIFFICULTY_GAP = 18
+DIFFICULTY_BUTTON_HEIGHT = 48
+CUSTOM_HINT_LINE_TOP = 406
+CUSTOM_HINT_LINE_STEP = 26
+CUSTOM_GENERATE_TOP = 462
+CUSTOM_BACK_TOP = 516
 
 
 class Screen:
@@ -88,18 +112,161 @@ class StartScreen(Screen):
         )
         self.buttons = [self.btn_start, self.btn_level_select]
 
+        # ---- 选关面板下方的「自定义关卡」入口 ----
+        self.btn_custom = Button(
+            "＋ 自定义关卡 (C)",
+            (0, 0, 1, 1),  # 每次绘制前按关卡数量重新定位
+            manager.open_custom_setup,
+        )
+
+        # ---- 自定义面板：行数 / 列数 / 箭头数量三行「− 数值 ＋」----
+        self.btn_minus: dict[str, Button] = {}
+        self.btn_plus: dict[str, Button] = {}
+        for index, field in enumerate(FIELDS):
+            minus_rect, _value_rect, plus_rect = self.stepper_rects(index)
+            self.btn_minus[field] = Button(
+                "−", minus_rect, self._adjust_action(field, -1), font_size=config.FONT_SIZE_H1
+            )
+            self.btn_plus[field] = Button(
+                "＋", plus_rect, self._adjust_action(field, 1), font_size=config.FONT_SIZE_H1
+            )
+        self.btn_fill_arrows = Button(
+            "填满",
+            (
+                CUSTOM_RECT.right - 36 - 74,
+                CUSTOM_RECT.top + CUSTOM_ARROWS_HINT_TOP - 16,
+                74,
+                32,
+            ),
+            self._fill_arrows_action,
+            font_size=config.FONT_SIZE_SMALL,
+        )
+        self.difficulty_buttons: dict[Difficulty, Button] = {}
+        for index, difficulty in enumerate(Difficulty):
+            self.difficulty_buttons[difficulty] = Button(
+                difficulty.label,
+                self.difficulty_rect(index),
+                self._difficulty_action(difficulty),
+            )
+        self.btn_generate = Button(
+            "生成并开始 (Enter)",
+            (CUSTOM_RECT.centerx - 150, CUSTOM_RECT.top + CUSTOM_GENERATE_TOP, 300, 46),
+            manager.generate_custom_level,
+            primary=True,
+        )
+        self.btn_custom_back = Button(
+            "返回选关 (Backspace)",
+            (CUSTOM_RECT.centerx - 110, CUSTOM_RECT.top + CUSTOM_BACK_TOP, 220, 36),
+            manager.close_custom_setup,
+            font_size=config.FONT_SIZE_SMALL,
+        )
+
+    # ---------- 按钮动作 ----------
+
+    def _adjust_action(self, field: str, delta: int) -> Callable[[], None]:
+        """生成「把某个字段加减 delta」的按钮动作。"""
+
+        def action() -> None:
+            self.session.custom_setup.adjust(delta, field)
+
+        return action
+
+    def _fill_arrows_action(self) -> None:
+        self.session.custom_setup.fill_arrows(True)
+
+    def _difficulty_action(self, difficulty: Difficulty) -> Callable[[], None]:
+        """生成「切换难度档位」的按钮动作。"""
+
+        def action() -> None:
+            self.session.custom_setup.set_difficulty(difficulty)
+
+        return action
+
     # ---------- 选关面板 ----------
 
     @staticmethod
     def level_row_rect(index: int) -> pygame.Rect:
         """选关面板里第 index 行（从 0 开始）的矩形。"""
-        top = LEVEL_SELECT_RECT.top + 120 + index * (LEVEL_ROW_HEIGHT + LEVEL_ROW_GAP)
+        top = LEVEL_SELECT_RECT.top + LEVEL_ROW_TOP + index * (LEVEL_ROW_HEIGHT + LEVEL_ROW_GAP)
         return pygame.Rect(
             LEVEL_SELECT_RECT.left + 40,
             top,
             LEVEL_SELECT_RECT.width - 80,
             LEVEL_ROW_HEIGHT,
         )
+
+    @staticmethod
+    def custom_button_rect(level_count: int) -> pygame.Rect:
+        """「自定义关卡」按钮：永远排在全部关卡行的下面。"""
+        top = (
+            LEVEL_SELECT_RECT.top
+            + LEVEL_ROW_TOP
+            + level_count * (LEVEL_ROW_HEIGHT + LEVEL_ROW_GAP)
+            + CUSTOM_BUTTON_GAP
+        )
+        return pygame.Rect(
+            LEVEL_SELECT_RECT.left + 40,
+            top,
+            LEVEL_SELECT_RECT.width - 80,
+            CUSTOM_BUTTON_HEIGHT,
+        )
+
+    @staticmethod
+    def stepper_rects(index: int) -> tuple[pygame.Rect, pygame.Rect, pygame.Rect]:
+        """自定义面板第 index 行的「− 数值 ＋」三块矩形。"""
+        center_y = CUSTOM_RECT.top + CUSTOM_FIELD_TOP + index * CUSTOM_FIELD_STEP
+        right = CUSTOM_RECT.right - 36
+        half = CUSTOM_STEPPER_SIZE // 2
+        plus = pygame.Rect(
+            right - CUSTOM_STEPPER_SIZE, center_y - half, CUSTOM_STEPPER_SIZE, CUSTOM_STEPPER_SIZE
+        )
+        value = pygame.Rect(
+            plus.left - 16 - CUSTOM_VALUE_WIDTH, center_y - 24, CUSTOM_VALUE_WIDTH, 48
+        )
+        minus = pygame.Rect(
+            value.left - 16 - CUSTOM_STEPPER_SIZE,
+            center_y - half,
+            CUSTOM_STEPPER_SIZE,
+            CUSTOM_STEPPER_SIZE,
+        )
+        return minus, value, plus
+
+    @staticmethod
+    def difficulty_rect(index: int) -> pygame.Rect:
+        """难度按钮的矩形（三个按钮在面板里水平居中）。"""
+        total = DIFFICULTY_WIDTH * 3 + DIFFICULTY_GAP * 2
+        left = (
+            CUSTOM_RECT.centerx
+            - total // 2
+            + index * (DIFFICULTY_WIDTH + DIFFICULTY_GAP)
+        )
+        return pygame.Rect(
+            left,
+            CUSTOM_RECT.top + DIFFICULTY_TOP,
+            DIFFICULTY_WIDTH,
+            DIFFICULTY_BUTTON_HEIGHT,
+        )
+
+    def custom_setup_buttons(self) -> list[Button]:
+        """自定义面板上的按钮，同时同步「选中 / 禁用」状态。"""
+        setup = self.session.custom_setup
+        for field in FIELDS:
+            low, high = setup.limits(field)
+            value = setup.value(field)
+            self.btn_minus[field].enabled = value > low
+            self.btn_plus[field].enabled = value < high
+        for difficulty, button in self.difficulty_buttons.items():
+            button.primary = setup.difficulty is difficulty
+        self.btn_fill_arrows.enabled = setup.arrows < setup.max_arrows
+        buttons: list[Button] = []
+        for field in FIELDS:
+            buttons.append(self.btn_minus[field])
+            buttons.append(self.btn_plus[field])
+        buttons.append(self.btn_fill_arrows)
+        buttons.extend(self.difficulty_buttons.values())
+        buttons.append(self.btn_generate)
+        buttons.append(self.btn_custom_back)
+        return buttons
 
     def level_at(self, pos: tuple[int, int]) -> int | None:
         """鼠标落在第几关的行上；不在任何一行上返回 None。"""
@@ -109,8 +276,12 @@ class StartScreen(Screen):
         return None
 
     def active_buttons(self) -> list[Button]:
-        if self.session.phase is Phase.LEVEL_SELECT:
-            return [self.btn_back]
+        phase = self.session.phase
+        if phase is Phase.LEVEL_SELECT:
+            self.btn_custom.rect = self.custom_button_rect(self.session.level_count)
+            return [self.btn_custom, self.btn_back]
+        if phase is Phase.CUSTOM_SETUP:
+            return self.custom_setup_buttons()
         return [self.btn_start, self.btn_level_select]
 
     # ---------- 事件 ----------
@@ -142,11 +313,45 @@ class StartScreen(Screen):
             if key == pygame.K_l:
                 self.manager.back_to_menu()
                 return True
+            if key == pygame.K_c:
+                self.manager.open_custom_setup()
+                return True
             if pygame.K_1 <= key <= pygame.K_9:
                 index = key - pygame.K_1
                 if index < self.session.level_count:
                     self.manager.start_at_level(index)
                     return True
+        elif phase is Phase.CUSTOM_SETUP:
+            return self._handle_custom_key(key)
+        return False
+
+    def _handle_custom_key(self, key: int) -> bool:
+        """自定义面板的键盘操作：上下换字段、左右改数值、Enter 生成。"""
+        setup = self.session.custom_setup
+        if key in (pygame.K_l, pygame.K_BACKSPACE):
+            self.manager.close_custom_setup()
+            return True
+        if key in (pygame.K_TAB, pygame.K_DOWN):
+            setup.move_focus(1)
+            return True
+        if key == pygame.K_UP:
+            setup.move_focus(-1)
+            return True
+        if key in (pygame.K_LEFT, pygame.K_MINUS):
+            setup.adjust(-1)
+            return True
+        if key in (pygame.K_RIGHT, pygame.K_PLUS, pygame.K_EQUALS):
+            setup.adjust(1)
+            return True
+        if key == pygame.K_f:
+            setup.fill_arrows(True)
+            return True
+        if pygame.K_1 <= key <= pygame.K_3:
+            setup.set_difficulty(list(Difficulty)[key - pygame.K_1])
+            return True
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+            self.manager.generate_custom_level()
+            return True
         return False
 
     # ---------- 绘制 ----------
@@ -155,6 +360,10 @@ class StartScreen(Screen):
         surface.fill(config.COLOR_BACKGROUND)
         if self.session.phase is Phase.LEVEL_SELECT:
             self.draw_level_select(surface)
+            self.draw_buttons(surface)
+            return
+        if self.session.phase is Phase.CUSTOM_SETUP:
+            self.draw_custom_setup(surface)
             self.draw_buttons(surface)
             return
         width = config.WINDOW_WIDTH
@@ -218,7 +427,7 @@ class StartScreen(Screen):
         )
         theme.draw_text(
             surface,
-            "点击任意一关直接开始，也可以按数字键 1 - 6",
+            "点击任意一关直接开始，数字键 1 - 9 也可以；最后一行的按钮可以自己造一关",
             config.FONT_SIZE_SMALL,
             config.COLOR_TEXT_DIM,
             centerx=LEVEL_SELECT_RECT.centerx,
@@ -226,18 +435,20 @@ class StartScreen(Screen):
         )
         hovered = self.level_at(self.pointer)
         for index, level in enumerate(self.session.levels):
+            custom = index >= self.session.builtin_level_count
             rect = self.level_row_rect(index)
             if index == hovered:
                 pygame.draw.rect(surface, config.COLOR_PANEL_LIGHT, rect, border_radius=10)
                 pygame.draw.rect(surface, config.COLOR_ACCENT, rect, width=2, border_radius=10)
             else:
                 pygame.draw.rect(surface, config.COLOR_BACKGROUND, rect, border_radius=10)
-                pygame.draw.rect(surface, config.COLOR_BORDER, rect, width=2, border_radius=10)
+                border = config.COLOR_SUCCESS if custom else config.COLOR_BORDER
+                pygame.draw.rect(surface, border, rect, width=2, border_radius=10)
             theme.draw_text(
                 surface,
                 level.name,
                 config.FONT_SIZE_BODY,
-                config.COLOR_TEXT,
+                config.COLOR_SUCCESS if custom else config.COLOR_TEXT,
                 topleft=(rect.left + 20, rect.centery - 15),
             )
             theme.draw_text(
@@ -247,6 +458,95 @@ class StartScreen(Screen):
                 config.COLOR_TEXT_DIM,
                 topright=(rect.right - 20, rect.centery - 13),
             )
+
+    def draw_custom_setup(self, surface: pygame.Surface) -> None:
+        """自定义关卡面板：地图大小、箭头数量与难度。"""
+        setup = self.session.custom_setup
+        pygame.draw.rect(surface, config.COLOR_PANEL, CUSTOM_RECT, border_radius=18)
+        pygame.draw.rect(surface, config.COLOR_BORDER, CUSTOM_RECT, width=2, border_radius=18)
+        theme.draw_text(
+            surface,
+            "自定义关卡",
+            config.FONT_SIZE_H1,
+            config.COLOR_ACCENT,
+            centerx=CUSTOM_RECT.centerx,
+            top=CUSTOM_RECT.top + 22,
+        )
+        theme.draw_text(
+            surface,
+            "随机生成，生成器保证这一关一定有解",
+            config.FONT_SIZE_SMALL,
+            config.COLOR_TEXT_DIM,
+            centerx=CUSTOM_RECT.centerx,
+            top=CUSTOM_RECT.top + 70,
+        )
+        for index, field in enumerate(FIELDS):
+            self.draw_stepper(surface, field, index)
+        theme.draw_text(
+            surface,
+            f"范围 {setup.min_arrows} - {setup.max_arrows}，填满 = 每个格子一个箭头",
+            config.FONT_SIZE_SMALL,
+            config.COLOR_TEXT_DIM,
+            topleft=(CUSTOM_RECT.left + 36, CUSTOM_RECT.top + CUSTOM_ARROWS_HINT_TOP - 10),
+        )
+        theme.draw_text(
+            surface,
+            "难度（按 best_layout 评分挑候选）",
+            config.FONT_SIZE_SMALL,
+            config.COLOR_TEXT_DIM,
+            centerx=CUSTOM_RECT.centerx,
+            top=CUSTOM_RECT.top + DIFFICULTY_LABEL_TOP,
+        )
+        hints = (
+            "难度越高，开局被挡住的箭头越多、越需要做选择",
+            f"当前设置：{setup.summary()}",
+        )
+        for index, text in enumerate(hints):
+            theme.draw_text(
+                surface,
+                text,
+                config.FONT_SIZE_SMALL,
+                config.COLOR_TEXT_DIM,
+                centerx=CUSTOM_RECT.centerx,
+                top=CUSTOM_RECT.top + CUSTOM_HINT_LINE_TOP + index * CUSTOM_HINT_LINE_STEP,
+            )
+        theme.draw_text(
+            surface,
+            "键盘：↑↓ 选字段 / ←→ 改数值 / 1-3 选难度 / F 填满 / Enter 生成",
+            config.FONT_SIZE_SMALL,
+            config.COLOR_TEXT_DIM,
+            centerx=config.WINDOW_WIDTH // 2,
+            top=CUSTOM_RECT.bottom + 10,
+        )
+
+    def draw_stepper(self, surface: pygame.Surface, field: str, index: int) -> None:
+        """画出「− 数值 ＋」一行，被选中的字段用强调色描边。"""
+        setup = self.session.custom_setup
+        _minus_rect, value_rect, _plus_rect = self.stepper_rects(index)
+        theme.draw_text(
+            surface,
+            FIELD_LABELS[field],
+            config.FONT_SIZE_BODY,
+            config.COLOR_TEXT,
+            topleft=(CUSTOM_RECT.left + 36, value_rect.centery - 15),
+        )
+        focused = setup.focus == field
+        pygame.draw.rect(surface, config.COLOR_BACKGROUND, value_rect, border_radius=10)
+        pygame.draw.rect(
+            surface,
+            config.COLOR_ACCENT if focused else config.COLOR_BORDER,
+            value_rect,
+            width=2,
+            border_radius=10,
+        )
+        theme.draw_text(
+            surface,
+            str(setup.value(field)),
+            config.FONT_SIZE_H1,
+            config.COLOR_ACCENT_BRIGHT if focused else config.COLOR_TEXT,
+            center=value_rect.center,
+        )
+
 
 class GameScreen(Screen):
     """游戏界面：HUD + 棋盘 + 结果面板。"""
@@ -542,7 +842,7 @@ class ScreenManager:
 
     @property
     def current(self) -> Screen:
-        if self.session.phase in (Phase.START, Phase.LEVEL_SELECT):
+        if self.session.phase in (Phase.START, Phase.LEVEL_SELECT, Phase.CUSTOM_SETUP):
             return self.start_screen
         return self.game_screen
 
@@ -568,6 +868,19 @@ class ScreenManager:
     def start_at_level(self, index: int) -> None:
         self.animations.clear()
         self.session.start_at_level(index)
+
+    def open_custom_setup(self) -> None:
+        self.animations.clear()
+        self.session.open_custom_setup()
+
+    def close_custom_setup(self) -> None:
+        self.animations.clear()
+        self.session.close_custom_setup()
+
+    def generate_custom_level(self) -> int:
+        """按「自定义关卡」面板里的设置生成一关并立刻开始。"""
+        self.animations.clear()
+        return self.session.start_generated_custom_level()
 
     def restart_level(self) -> None:
         self.animations.clear()
