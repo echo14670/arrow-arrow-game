@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import random
 import unittest
 
+from game.generator import Difficulty
 from game.levels import Level
 from game.session import ClickResult, Phase, Session, format_time
-from game.solver import solve
+from game.setup import FIELD_ARROWS, FIELD_COLS, FIELD_ROWS
+from game.solver import is_solvable, solve
 
 # 测试用的极小关卡：一行一个朝右的箭头，点一下就通关
 TINY = Level(name="迷你关", grid=(">.",), mistakes=1)
@@ -288,6 +291,127 @@ class TimerAndSummaryTest(unittest.TestCase):
         self.assertEqual(format_time(65.4), "01:05")
         self.assertEqual(format_time(600), "10:00")
         self.assertEqual(format_time(-3), "00:00")
+
+
+class CustomLevelTest(unittest.TestCase):
+    """自定义关卡：进设置面板、生成、开局、替换与重开。"""
+
+    def setUp(self) -> None:
+        self.session = Session()
+        self.session.open_level_select()
+        self.session.open_custom_setup()
+
+    def test_open_custom_setup_from_level_select(self) -> None:
+        self.assertIs(self.session.phase, Phase.CUSTOM_SETUP)
+
+    def test_open_custom_setup_is_ignored_in_other_phases(self) -> None:
+        session = Session()
+        session.open_custom_setup()
+        self.assertIs(session.phase, Phase.START)
+        session.start_game()
+        session.open_custom_setup()
+        self.assertIs(session.phase, Phase.PLAYING)
+
+    def test_close_custom_setup_returns_to_level_select(self) -> None:
+        self.session.close_custom_setup()
+        self.assertIs(self.session.phase, Phase.LEVEL_SELECT)
+
+    def test_close_custom_setup_is_ignored_elsewhere(self) -> None:
+        session = Session()
+        session.close_custom_setup()
+        self.assertIs(session.phase, Phase.START)
+
+    def test_there_is_no_custom_level_before_generating(self) -> None:
+        self.assertFalse(self.session.has_custom_level)
+        self.assertEqual(self.session.custom_level_index, -1)
+        self.assertEqual(self.session.level_count, self.session.builtin_level_count)
+
+    def test_generate_starts_a_playable_custom_level(self) -> None:
+        index = self.session.start_generated_custom_level(random.Random(2026))
+        self.assertEqual(index, self.session.builtin_level_count)
+        self.assertIs(self.session.phase, Phase.PLAYING)
+        self.assertTrue(self.session.is_custom_level)
+        self.assertEqual(self.session.level_number, self.session.level_count)
+        self.assertEqual(self.session.board.arrow_count, self.session.custom_setup.arrows)
+        self.assertTrue(is_solvable(self.session.board))
+
+    def test_generated_level_matches_the_form(self) -> None:
+        setup = self.session.custom_setup
+        setup.set_value(FIELD_ROWS, 3)
+        setup.set_value(FIELD_COLS, 4)
+        setup.set_value(FIELD_ARROWS, 6)
+        setup.set_difficulty(Difficulty.HIGH)
+        self.session.start_generated_custom_level(random.Random(11))
+        level = self.session.level
+        self.assertEqual((level.rows, level.cols), (3, 4))
+        self.assertEqual(level.arrow_count, 6)
+        self.assertEqual(level.mistakes, setup.mistake_budget)
+        self.assertIn(Difficulty.HIGH.label, level.name)
+
+    def test_generating_twice_replaces_the_same_slot(self) -> None:
+        builtin = Session().level_count
+        self.session.start_generated_custom_level(random.Random(1))
+        first = self.session.level
+        self.session.back_to_menu()
+        self.session.open_level_select()
+        self.session.open_custom_setup()
+        index = self.session.start_generated_custom_level(random.Random(2))
+        self.assertEqual(index, builtin)
+        self.assertEqual(self.session.level_count, builtin + 1, "自定义关卡只占一个槽位")
+        self.assertIsNot(self.session.level, first)
+        self.assertIs(self.session.levels[builtin], self.session.level)
+
+    def test_custom_level_appears_in_the_level_list(self) -> None:
+        index = self.session.start_generated_custom_level(random.Random(3))
+        self.assertEqual(self.session.levels[index].name, self.session.level.name)
+        self.assertEqual(self.session.builtin_level_count, 6)
+
+    def test_custom_level_can_be_cleared_and_is_the_last_one(self) -> None:
+        setup = self.session.custom_setup
+        setup.set_value(FIELD_ROWS, 3)
+        setup.set_value(FIELD_COLS, 3)
+        setup.set_value(FIELD_ARROWS, 4)
+        self.session.start_generated_custom_level(random.Random(7))
+        while self.session.phase is Phase.PLAYING:
+            order = solve(self.session.board)
+            self.assertIsNotNone(order)
+            self.session.click_cell(*order[0])
+        self.assertIs(self.session.phase, Phase.LEVEL_CLEAR)
+        self.assertEqual(self.session.cleared_levels, 1)
+        self.assertFalse(self.session.next_level(), "自定义关卡是最后一关，应该全通关")
+        self.assertIs(self.session.phase, Phase.ALL_CLEAR)
+
+    def test_restart_restores_the_custom_level(self) -> None:
+        self.session.start_generated_custom_level(random.Random(5))
+        initial = self.session.board.to_grid()
+        mistakes = self.session.mistakes_left
+        self.session.click_cell(*solve(self.session.board)[0])
+        self.session.restart_level()
+        self.assertEqual(self.session.board.to_grid(), initial)
+        self.assertEqual(self.session.mistakes_left, mistakes)
+        self.assertIs(self.session.phase, Phase.PLAYING)
+
+    def test_undo_works_inside_a_custom_level(self) -> None:
+        self.session.start_generated_custom_level(random.Random(8))
+        before = self.session.board.to_grid()
+        self.session.click_cell(*solve(self.session.board)[0])
+        self.assertTrue(self.session.undo())
+        self.assertEqual(self.session.board.to_grid(), before)
+
+    def test_restart_is_ignored_on_the_setup_panel(self) -> None:
+        self.session.restart_level()
+        self.assertIs(self.session.phase, Phase.CUSTOM_SETUP)
+
+    def test_builtin_count_keeps_the_original_levels(self) -> None:
+        session = Session([TINY, TINY])
+        self.assertEqual(session.builtin_level_count, 2)
+        session.open_level_select()
+        session.open_custom_setup()
+        session.start_generated_custom_level(random.Random(1))
+        self.assertEqual(session.level_count, 3)
+        self.assertEqual(session.is_custom_level, True)
+        session.start_at_level(0)
+        self.assertEqual(session.is_custom_level, False)
 
 
 if __name__ == "__main__":  # pragma: no cover

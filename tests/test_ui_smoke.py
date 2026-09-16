@@ -15,7 +15,9 @@ os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
 import pygame  # noqa: E402
 
 from game.app import Game  # noqa: E402
+from game.generator import Difficulty  # noqa: E402
 from game.session import ClickResult, Phase  # noqa: E402
+from game.setup import FIELD_ARROWS, FIELD_COLS, FIELD_ROWS  # noqa: E402
 from game.solver import solve  # noqa: E402
 from game.ui import layout  # noqa: E402
 
@@ -49,6 +51,19 @@ class UiSmokeTest(unittest.TestCase):
             if self.game.session.board.is_free(row, col) is want_free:
                 return row, col
         raise AssertionError("找不到符合条件的箭头")
+
+    def press(self, key: int) -> None:
+        pygame.event.post(
+            pygame.event.Event(pygame.KEYDOWN, {"key": key, "mod": 0, "unicode": ""})
+        )
+        self.game.handle_events()
+
+    def open_custom_panel(self) -> None:
+        """从主菜单依次进入选关界面与「自定义关卡」面板。"""
+        start = self.game.screens.start_screen
+        self.click(start.btn_level_select.rect.center)
+        start.active_buttons()  # 让「自定义关卡」按钮先按关卡数量定位
+        self.click(start.btn_custom.rect.center)
 
     # ---------- 用例 ----------
 
@@ -126,6 +141,119 @@ class UiSmokeTest(unittest.TestCase):
         self.assertIs(self.game.session.phase, Phase.PLAYING)
         self.assertEqual(self.game.session.level_number, 5)
 
+    # ---------- 自定义关卡 ----------
+
+    def test_custom_button_opens_the_setup_panel(self) -> None:
+        self.open_custom_panel()
+        self.assertIs(self.game.session.phase, Phase.CUSTOM_SETUP)
+        self.game.draw()
+
+    def test_stepper_buttons_change_the_board_size(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        setup = self.game.session.custom_setup
+        rows = setup.rows
+        self.click(start.btn_plus[FIELD_ROWS].rect.center)
+        self.assertEqual(setup.rows, rows + 1)
+        self.click(start.btn_minus[FIELD_ROWS].rect.center)
+        self.assertEqual(setup.rows, rows)
+
+    def test_plus_button_is_disabled_at_the_limit(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        setup = self.game.session.custom_setup
+        setup.set_value(FIELD_ROWS, setup.max_size)
+        self.click(start.btn_plus[FIELD_ROWS].rect.center)
+        self.assertEqual(setup.rows, setup.max_size, "到了上限，加号就不该再生效")
+
+    def test_shrinking_the_board_clamps_the_arrows_in_the_panel(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        setup = self.game.session.custom_setup
+        setup.set_value(FIELD_ROWS, 6)
+        setup.set_value(FIELD_COLS, 6)
+        setup.set_value(FIELD_ARROWS, 36)
+        self.click(start.btn_minus[FIELD_ROWS].rect.center)
+        self.assertEqual(setup.rows, 5)
+        self.assertEqual(setup.arrows, 30, "棋盘变成 5×6 之后箭头数量要跟着夹紧")
+        self.game.draw()
+
+    def test_fill_button_and_difficulty_buttons(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        setup = self.game.session.custom_setup
+        setup.set_value(FIELD_ROWS, 4)
+        setup.set_value(FIELD_COLS, 4)
+        self.click(start.btn_fill_arrows.rect.center)
+        self.assertEqual(setup.arrows, 16)
+        self.click(start.difficulty_buttons[Difficulty.HIGH].rect.center)
+        self.assertIs(setup.difficulty, Difficulty.HIGH)
+        self.click(start.difficulty_buttons[Difficulty.LOW].rect.center)
+        self.assertIs(setup.difficulty, Difficulty.LOW)
+        self.game.draw()
+
+    def test_generate_button_starts_a_custom_level(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        setup = self.game.session.custom_setup
+        setup.set_value(FIELD_ROWS, 3)
+        setup.set_value(FIELD_COLS, 3)
+        setup.set_value(FIELD_ARROWS, 4)
+        builtin = self.game.session.builtin_level_count
+        self.click(start.btn_generate.rect.center)
+        session = self.game.session
+        self.assertIs(session.phase, Phase.PLAYING)
+        self.assertEqual(session.level_count, builtin + 1)
+        self.assertEqual(session.level_number, builtin + 1)
+        self.assertEqual(session.board.arrow_count, 4)
+        self.game.draw()  # 自定义关卡的棋盘也要能画出来
+
+    def test_back_button_returns_to_level_select(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        self.click(start.btn_custom_back.rect.center)
+        self.assertIs(self.game.session.phase, Phase.LEVEL_SELECT)
+        self.game.draw()
+
+    def test_c_key_opens_the_custom_panel(self) -> None:
+        self.click(self.game.screens.start_screen.btn_level_select.rect.center)
+        self.press(pygame.K_c)
+        self.assertIs(self.game.session.phase, Phase.CUSTOM_SETUP)
+
+    def test_backspace_closes_the_custom_panel(self) -> None:
+        self.open_custom_panel()
+        self.press(pygame.K_BACKSPACE)
+        self.assertIs(self.game.session.phase, Phase.LEVEL_SELECT)
+
+    def test_custom_panel_keyboard_controls(self) -> None:
+        self.open_custom_panel()
+        setup = self.game.session.custom_setup
+        self.press(pygame.K_3)
+        self.assertIs(setup.difficulty, Difficulty.HIGH)
+        self.press(pygame.K_DOWN)
+        self.assertEqual(setup.focus, FIELD_COLS)
+        before = setup.cols
+        self.press(pygame.K_RIGHT)
+        self.assertEqual(setup.cols, before + 1)
+        self.press(pygame.K_LEFT)
+        self.assertEqual(setup.cols, before)
+        self.press(pygame.K_f)
+        self.assertEqual(setup.arrows, setup.max_arrows)
+        self.press(pygame.K_RETURN)
+        self.assertIs(self.game.session.phase, Phase.PLAYING)
+
+    def test_generated_level_can_be_replayed_from_the_level_list(self) -> None:
+        self.open_custom_panel()
+        start = self.game.screens.start_screen
+        self.game.session.custom_setup.set_value(FIELD_ARROWS, 5)
+        self.click(start.btn_generate.rect.center)
+        index = self.game.session.custom_level_index
+        self.game.session.back_to_menu()
+        self.click(start.btn_level_select.rect.center)
+        self.click(start.level_row_rect(index).center)
+        self.assertIs(self.game.session.phase, Phase.PLAYING)
+        self.assertEqual(self.game.session.level_number, index + 1)
+
     def test_survives_restarting_pygame(self) -> None:
         """pygame 重新初始化后仍然能正常绘制。
 
@@ -148,6 +276,11 @@ class UiSmokeTest(unittest.TestCase):
             surfaces.append(self.game.screen.get_at((10, 10)))
 
         snapshot()  # 开始界面
+        self.click(self.game.screens.start_screen.btn_level_select.rect.center)
+        snapshot()  # 选关界面（含自定义关卡入口）
+        self.game.session.open_custom_setup()
+        snapshot()  # 自定义关卡面板
+        self.game.session.back_to_menu()
         self.start_game()
         snapshot()  # 游戏界面
         while self.game.session.phase is Phase.PLAYING:
@@ -168,4 +301,4 @@ class UiSmokeTest(unittest.TestCase):
                 self.game.session.next_level()
         self.screen.animations.clear()
         snapshot()  # 全部通关界面
-        self.assertEqual(len(surfaces), 5)
+        self.assertEqual(len(surfaces), 7)
